@@ -1,4 +1,5 @@
 # Patch files must stay byte-exact; never apply line-ending conversion.
 *.patch -text
-# Batch files must keep CRLF line endings.
-*.bat text eol=crlf
+# Batch files are stored with CRLF so every download path (clone, raw, ZIP)
+# yields a runnable file on Windows.
+*.bat -text
