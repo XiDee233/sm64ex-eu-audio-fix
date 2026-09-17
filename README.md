@@ -5,6 +5,7 @@
 - 上游 issue：[sm64pc/sm64ex#507 — Sound stops a few seconds after start with eu version](https://github.com/sm64pc/sm64ex/issues/507)
 - **不需要更换 ROM**：仍然是欧版 ROM（Super Mario 64 (Europe) (En,Fr,De)，SHA1 `4ac5721683d0e0b6bbb561b58a71740845dceea9`）
 - 补丁文件：[`eu-audio-fix.patch`](eu-audio-fix.patch)（`git format-patch` 格式，`git apply` / `git am` 均可）
+- Windows 一键应用：[`apply.bat`](apply.bat) —— 把 sm64ex 源码目录拖到它上面即可，或 `apply.bat "D:\path\to\sm64ex"`
 
 ---
 
@@ -55,6 +56,23 @@ VERSION_ASFLAGS := --defsym AVOID_UB=1
 3. `note_pool_fill` 于是把**全局音符池一次性抽干**，全部搬进该通道的私有池
 4. 全局池空了以后，**所有**序列（包括 BGM）的 `alloc_note` 全部失败 → **永久静音**
 
+### 为什么一个变量赋值能决定「有没有声音」
+
+SM64 的音频不是「播放音频文件」，而是**音频引擎逐条执行一段指令序列脚本**（sequence）。
+而这些指令的**字节编码在日/美/欧三个 ROM 版本里各不相同** —— 同一个宏在不同版本下汇编出不同的字节。
+
+`Makefile` 里的 `VERSION_DEF`（= `VERSION_EU`）同时喂给两条编译路径：
+
+| 编译路径 | 走哪个变量 | 实际结果 |
+|---|---|---|
+| C 源码（音频**引擎**） | `VERSION_CFLAGS` → `-DVERSION_EU` | **一直是好的** |
+| 汇编（**序列脚本**数据） | `VERSION_ASFLAGS` → `--defsym VERSION_EU=1` | **被第 225 行冲掉了** |
+
+所以坏掉的是「半个欧版构建」：引擎这一半是欧版，序列数据那一半是美版。
+两半对不上，`F1 FB` 就被欧版引擎读成了「预留 251 个音符」。
+
+这也解释了为什么光看音频代码永远找不到 bug —— **C 那一半从头到尾都是对的**。
+
 ### 实测证据
 
 坏掉的 `00_sound_player.m64` 里 `F1 FB` 恰好出现 **3 次**，运行时插桩抓到的原话：
@@ -93,6 +111,23 @@ f=165 player=2 seqId=0 chan=17 pcoff=290 count=251
 
 ## 应用方法
 
+### Windows：一键
+
+把 sm64ex 的**源码目录**拖到 `apply.bat` 上，或者：
+
+```bat
+apply.bat "D:\path\to\sm64ex"
+```
+
+脚本会先 `git apply --check` **干跑**，只有确认能干净应用才真正落盘；如果检测到已经打过这个补丁，
+会直接告诉你"Already applied"然后退出。**任何情况下都不会改到一半。** 不满意可以随时撤销：
+
+```bat
+git apply --reverse "D:\path\to\sm64ex-eu-audio-fix\eu-audio-fix.patch"
+```
+
+### 手动（任何平台）
+
 ```sh
 git clone https://github.com/sm64pc/sm64ex.git
 cd sm64ex
@@ -100,7 +135,16 @@ git checkout nightly
 
 git apply /path/to/eu-audio-fix.patch
 # 或者保留提交信息：git am < /path/to/eu-audio-fix.patch
+# 没有 git 也可以用：patch -p1 < /path/to/eu-audio-fix.patch
 ```
+
+### 就两行，手动改也行
+
+改动本身小到可以直接手改，效果完全等价：
+
+1. `Makefile` 第 225 行，把 `VERSION_ASFLAGS := --defsym AVOID_UB=1`
+   改成 `VERSION_ASFLAGS := $(VERSION_ASFLAGS) --defsym AVOID_UB=1`
+2. `src/audio/port_eu.c` 的 include 区加上一行 `#include "heap.h"`
 
 然后按仓库自己的说明放好欧版 ROM 并编译（`VERSION=eu`）。
 
