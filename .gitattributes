@@ -1,0 +1,2 @@
+# Patch files must stay byte-exact; never apply line-ending conversion.
+*.patch -text
